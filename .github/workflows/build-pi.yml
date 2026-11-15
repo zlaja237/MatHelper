@@ -1,0 +1,68 @@
+# Builds the Raspberry Pi (64-bit ARM) binary on every push and publishes it
+# as the rolling GitHub release "pi-latest". Pis running deploy/pi/install.sh
+# pick it up automatically via their nightly update timer.
+name: Build for Raspberry Pi
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-pi
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Native ARM64 runner. Ubuntu 22.04 (glibc 2.35) so the binary also runs
+    # on older Raspberry Pi OS releases (Bookworm has glibc 2.36).
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: pi-${{ hashFiles('Cargo.lock') }}
+          restore-keys: pi-
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Package
+        run: |
+          mkdir -p dist/matmetrics/data
+          cp target/release/matmetrics dist/matmetrics/
+          cp data/categories.toml dist/matmetrics/data/
+          cp deploy/pi/install.sh dist/matmetrics/
+          echo "${GITHUB_SHA}" > dist/matmetrics/VERSION
+          tar -C dist -czf matmetrics-aarch64.tar.gz matmetrics
+          sha256sum matmetrics-aarch64.tar.gz | cut -d' ' -f1 > matmetrics-aarch64.sha256
+
+      # Only the repository's default branch publishes; other branches just
+      # check that the build works.
+      - name: Publish release "pi-latest"
+        if: github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view pi-latest >/dev/null 2>&1 || \
+            gh release create pi-latest --title "Raspberry Pi build (latest)" \
+              --notes "Built automatically from the default branch." --latest
+          git tag -f pi-latest
+          git push -f origin pi-latest
+          gh release upload pi-latest matmetrics-aarch64.tar.gz matmetrics-aarch64.sha256 --clobber

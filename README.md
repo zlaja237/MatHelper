@@ -46,6 +46,35 @@ cargo run -- serve
 en enda profil ("du"). Kopiera `config.example.toml` → `config.toml` för
 fler hushållsmedlemmar — se den filen för formatet.
 
+## Raspberry Pi (automatiskt)
+
+Kör dygnet runt på en Raspberry Pi 3 eller 4 utan att något byggs på Pi:n.
+GitHub Actions bygger en ARM64-binär vid varje push till default-branchen
+och lägger den i releasen `pi-latest`
+(`.github/workflows/build-pi.yml`). Pi:n hämtar den själv.
+
+1. Flasha **Raspberry Pi OS Lite (64-bit)** med Raspberry Pi Imager. Under
+   *Edit settings*: värdnamn `matmetrics`, användare/lösenord, Wi-Fi och
+   **SSH på**.
+2. `ssh <användare>@matmetrics.local` och kör:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/zlaja237/MatHelper/HEAD/deploy/pi/install.sh | sudo bash
+   ```
+
+3. Öppna `http://matmetrics.local:7878/report.html` från mobilen.
+
+Skriptet (`deploy/pi/install.sh`, går att köra om) installerar Chromium +
+Xvfb (en virtuell skärm, så Willys/Hemköp-inloggningen får en riktig
+webbläsare utan monitor), lägger till swap på Pi 3, kör appen som
+systemd-tjänst som startar vid boot och startas om om den kraschar, slår på
+automatiska säkerhetsuppdateringar för OS:et och installerar en nattlig
+timer som hämtar nya byggen (`sudo matmetrics-update` gör det direkt).
+Kvittodata ligger i `/var/lib/matmetrics/data`.
+
+En omstart eller uppdatering kräver ny BankID-inloggning (tokens hålls bara
+i minnet); uppdateringar sker bara när det finns ett nytt bygge.
+
 ## Kommandon
 
 | Kommando | Gör |
