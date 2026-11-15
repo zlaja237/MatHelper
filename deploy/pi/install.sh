@@ -179,8 +179,9 @@ ip_addr="$(hostname -I | awk '{print $1}')"
 log "klart! version $(cut -c1-7 "${APP_DIR}/VERSION")"
 cat <<EOF
 
-  Öppna:  http://$(hostname).local:${PORT}/report.html
-     el:  http://${ip_addr}:${PORT}/report.html
+  Inköpslista:  http://$(hostname).local:${PORT}/
+           el:  http://${ip_addr}:${PORT}/
+  Kvitton:      http://$(hostname).local:${PORT}/report.html
 
   Status:      systemctl status matmetrics
   Loggar:      journalctl -u matmetrics -f

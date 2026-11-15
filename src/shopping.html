@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d0a">
+<title>Inköpslista</title>
+<style>
+  :root {
+    --bg: #0b0d0a;
+    --panel: #12150f;
+    --panel-2: #171b13;
+    --border: #23281d;
+    --text: #eef1e8;
+    --text-dim: #8b9382;
+    --accent: #c9f24a;
+    --accent-ink: #11140c;
+    --danger: #e8748a;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.4;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 20px 16px 80px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { font-size: 1.6rem; margin: 0; letter-spacing: -0.01em; }
+  header a { color: var(--text-dim); font-size: 0.9rem; text-decoration: none; white-space: nowrap; }
+  header a:hover { color: var(--text); }
+  h2 {
+    font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim); font-weight: 600; margin: 22px 0 8px;
+  }
+
+  form.add { display: flex; gap: 8px; position: sticky; top: 0; padding: 8px 0; background: var(--bg); z-index: 2; }
+  form.add input {
+    flex: 1; min-width: 0; font: inherit; color: var(--text);
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  form.add input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit; cursor: pointer; border: 0; border-radius: var(--radius);
+    background: var(--accent); color: var(--accent-ink); font-weight: 600; padding: 12px 16px;
+  }
+  button.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); padding: 6px 12px; font-weight: 500; font-size: 0.85rem; }
+  button.ghost:hover { color: var(--text); }
+
+  ul { list-style: none; margin: 0; padding: 0; }
+  .group { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 4px 6px 4px 14px; border-top: 1px solid var(--border); }
+  .item:first-child { border-top: 0; }
+  .item label { flex: 1; display: flex; align-items: center; gap: 12px; padding: 10px 0; cursor: pointer; min-width: 0; }
+  .item input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; margin: 0; }
+  .item .name { overflow-wrap: anywhere; }
+  .item.done .name { color: var(--text-dim); text-decoration: line-through; }
+  .item .remove { background: transparent; color: var(--text-dim); padding: 8px 10px; font-size: 1.1rem; line-height: 1; }
+  .item .remove:hover { color: var(--danger); }
+
+  .empty { color: var(--text-dim); padding: 18px 2px; }
+  .done-bar { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 8px; }
+  .done-bar h2 { margin: 0; }
+
+  .sugg { display: flex; align-items: center; gap: 10px; padding: 10px 6px 10px 14px; border-top: 1px solid var(--border); }
+  .sugg:first-child { border-top: 0; }
+  .sugg .text { flex: 1; min-width: 0; }
+  .sugg .why { display: block; color: var(--text-dim); font-size: 0.8rem; }
+  .sugg button { padding: 8px 14px; flex: none; }
+  .hint { color: var(--text-dim); font-size: 0.85rem; margin: 6px 2px 0; }
+  .error { color: var(--danger); font-size: 0.85rem; min-height: 1.2em; margin: 4px 2px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Inköpslista</h1>
+    <a href="/report.html">Kvitton & statistik →</a>
+  </header>
+
+  <form class="add" id="add-form" autocomplete="off">
+    <input id="add-input" list="known" placeholder="Lägg till vara, t.ex. mjölk" aria-label="Vara" enterkeyhint="done">
+    <button type="submit">Lägg till</button>
+  </form>
+  <datalist id="known"></datalist>
+  <p class="error" id="error"></p>
+
+  <section id="list"></section>
+
+  <section id="done-section" hidden>
+    <div class="done-bar">
+      <h2>I korgen</h2>
+      <button class="ghost" id="clear-done" type="button">Rensa</button>
+    </div>
+    <ul class="group" id="done-list"></ul>
+  </section>
+
+  <section>
+    <h2>Förslag från dina kvitton</h2>
+    <ul class="group" id="suggestions"></ul>
+    <p class="hint">Varor du brukar köpa och som det börjar bli dags för igen.</p>
+  </section>
+</main>
+
+<script>
+// Ungefärlig ordning genom butiken; okända kategorier hamnar sist i bokstavsordning.
+const CATEGORY_ORDER = [
+  "Frukt & grönt", "Bröd & bageri", "Kött, chark & fågel", "Fisk & skaldjur",
+  "Vegetariskt", "Mejeri & ägg", "Färdigmat", "Frysvaror", "Skafferi", "Sås",
+  "Kaffe & te", "Dryck", "Godis, snacks och glass", "Barn & baby", "Husdjur",
+  "Hälsa & skönhet", "Apotek", "Hushåll", "Blommor", "Kläder", "Alkohol", "Övrigt",
+];
+const rank = c => { const i = CATEGORY_ORDER.indexOf(c); return i < 0 ? 999 : i; };
+
+const $ = id => document.getElementById(id);
+let list = { items: [] };
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+async function api(path, body) {
+  const opts = body === undefined ? { cache: "no-store" }
+    : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+function showError(e) { $("error").textContent = e ? "Kunde inte spara — försök igen." : ""; }
+
+function itemHtml(it) {
+  return `<li class="item${it.done ? " done" : ""}">
+    <label><input type="checkbox" data-toggle="${it.id}"${it.done ? " checked" : ""}><span class="name">${esc(it.name)}</span></label>
+    <button class="remove" data-remove="${it.id}" aria-label="Ta bort ${esc(it.name)}">×</button>
+  </li>`;
+}
+
+function renderList() {
+  const open = list.items.filter(i => !i.done);
+  const done = list.items.filter(i => i.done);
+
+  if (!open.length) {
+    $("list").innerHTML = `<p class="empty">Listan är tom. Lägg till något ovan eller välj bland förslagen.</p>`;
+  } else {
+    const groups = new Map();
+    for (const it of open) {
+      if (!groups.has(it.category)) groups.set(it.category, []);
+      groups.get(it.category).push(it);
+    }
+    const cats = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, "sv"));
+    $("list").innerHTML = cats.map(c =>
+      `<h2>${esc(c)}</h2><ul class="group">${groups.get(c).map(itemHtml).join("")}</ul>`).join("");
+  }
+
+  $("done-section").hidden = !done.length;
+  $("done-list").innerHTML = done.map(itemHtml).join("");
+}
+
+function dayText(n) { return n === 1 ? "1 dag" : `${Math.round(n)} dagar`; }
+
+async function loadSuggestions() {
+  try {
+    const data = await api("/api/suggestions");
+    $("known").innerHTML = data.known.map(k => `<option value="${esc(k.name)}">`).join("");
+    if (!data.suggestions.length) {
+      $("suggestions").innerHTML = `<li class="sugg"><span class="text why">Inga förslag just nu. Synka fler kvitton under Kvitton & statistik.</span></li>`;
+      return;
+    }
+    $("suggestions").innerHTML = data.suggestions.map(s => `<li class="sugg">
+      <span class="text">${esc(s.name)}
+        <span class="why">Brukar köpas var ${dayText(s.every_days)} · senast för ${dayText(s.days_since)} sedan</span></span>
+      <button type="button" data-add="${esc(s.name)}" data-cat="${esc(s.category)}">+ Lägg till</button>
+    </li>`).join("");
+  } catch {
+    $("suggestions").innerHTML = `<li class="sugg"><span class="text why">Kunde inte läsa förslagen.</span></li>`;
+  }
+}
+
+async function loadList() {
+  try { list = await api("/api/list"); renderList(); } catch { /* behåll senaste */ }
+}
+
+async function change(path, body, refreshSuggestions) {
+  try {
+    list = await api(path, body);
+    showError(null);
+    renderList();
+    if (refreshSuggestions) loadSuggestions();
+  } catch (e) { showError(e); }
+}
+
+$("add-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const name = $("add-input").value.trim();
+  if (!name) return;
+  $("add-input").value = "";
+  change("/api/list/add", { name }, true);
+});
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-remove],[data-add]");
+  if (!t) return;
+  if (t.dataset.remove) change("/api/list/remove", { id: Number(t.dataset.remove) }, true);
+  if (t.dataset.add) {
+    t.closest("li").remove();
+    change("/api/list/add", { name: t.dataset.add, category: t.dataset.cat }, false);
+  }
+});
+
+document.addEventListener("change", e => {
+  const id = e.target.dataset && e.target.dataset.toggle;
+  if (id) change("/api/list/toggle", { id: Number(id) }, false);
+});
+
+$("clear-done").addEventListener("click", () => change("/api/list/clear-done", {}, true));
+
+// Hämta om listan med jämna mellanrum så ändringar från andra telefoner syns.
+setInterval(() => { if (!document.hidden) loadList(); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) loadList(); });
+
+loadList();
+loadSuggestions();
+</script>
+</body>
+</html>

@@ -10,3 +10,4 @@ config.toml
 data/*
 !data/categories.toml
 out/
+__pycache__/

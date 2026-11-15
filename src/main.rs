@@ -1,6 +1,7 @@
 mod config;
 mod report;
 mod serve_sync;
+mod shopping;
 mod sync_meta;
 
 use axum::extract::{Path, State};
@@ -99,6 +100,19 @@ async fn run_server(port: u16, profiles: Vec<ProfileId>) -> anyhow::Result<()> {
     }
 
     let app = Router::new()
+        // Inköpslistan är startsidan; kvittoöversikten ligger kvar på /report.html.
+        .route("/", get(shopping::page))
+        .route("/login", get(shopping::login_page))
+        .route("/api/list", get(shopping::get_list))
+        .route("/api/list/add", post(shopping::add_item))
+        .route("/api/list/toggle", post(shopping::toggle_item))
+        .route("/api/list/remove", post(shopping::remove_item))
+        .route("/api/list/clear-done", post(shopping::clear_done))
+        .route("/api/suggestions", get(shopping::get_suggestions))
+        .route("/api/receipts", get(shopping::get_receipts))
+        .route("/api/patterns", get(shopping::get_patterns))
+        .route("/api/list/open-names", get(shopping::open_names))
+        .route("/api/list/done-by-name", post(shopping::done_by_name))
         .route("/api/overrides", get(get_overrides).delete(delete_overrides))
         .route("/api/overrides/set", post(post_override))
         .route("/api/profiles", get(get_profiles))
@@ -110,7 +124,7 @@ async fn run_server(port: u16, profiles: Vec<ProfileId>) -> anyhow::Result<()> {
 
     let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    eprintln!("Serverar out/ på http://{addr}/report.html (LAN — ingen auth)");
+    eprintln!("Serverar inköpslistan på http://{addr}/ och kvittona på /report.html (LAN — ingen auth)");
     axum::serve(listener, app).await?;
     Ok(())
 }

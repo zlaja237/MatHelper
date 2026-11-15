@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="sv">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b0d0a">
+<title>BankID-inloggning</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#0b0d0a; --panel:#12150f; --border:#23281d; --text:#eef1e8; --text-dim:#8b9382; --accent:#c9f24a; --accent-ink:#11140c; --danger:#e8748a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.4; }
+  main { max-width:420px; margin:0 auto; padding:28px 16px 60px; text-align:center; }
+  h1 { font-size:1.4rem; margin:0 0 6px; }
+  p { color:var(--text-dim); margin:0 0 18px; }
+  a.open { display:block; background:var(--accent); color:var(--accent-ink); font-weight:600; text-decoration:none; border-radius:14px; padding:16px; margin:0 0 22px; }
+  #qr { display:inline-block; background:#fff; padding:12px; border-radius:12px; }
+  #qr:empty { display:none; }
+  #status { margin-top:18px; color:var(--text); }
+  #status.error { color:var(--danger); }
+  #status.ok { color:var(--accent); }
+  button { font:inherit; margin-top:14px; background:transparent; color:var(--text-dim); border:1px solid var(--border); border-radius:12px; padding:10px 16px; cursor:pointer; }
+  nav { margin-top:28px; }
+  nav a { color:var(--text-dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">Logga in med BankID</h1>
+  <p id="sub">Hämtar nya kvitton.</p>
+  <div id="prompt"></div>
+  <div id="qr"></div>
+  <div id="status">Startar...</div>
+  <button id="retry" hidden>Försök igen</button>
+  <nav><a href="/">Inköpslista</a> · <a href="/report.html">Kvitton</a></nav>
+</main>
+<script>
+// /login?source=ica&profile=du — startar (eller följer) en synk och visar
+// BankID-länken och den roterande QR-koden live. Länken måste tryckas på av
+// användaren: mobila webbläsare blockerar app-länkar som öppnas från en timer.
+const params = new URLSearchParams(location.search);
+const source = params.get("source") || "ica";
+const profile = params.get("profile") || "du";
+const LABELS = { ica: "ICA", willys: "Willys", hemkop: "Hemköp", "hemköp": "Hemköp" };
+const $ = id => document.getElementById(id);
+$("title").textContent = `Logga in på ${LABELS[source] || source}`;
+$("sub").textContent = `Hämtar nya kvitton för profilen "${profile}".`;
+
+let lastQr = null, lastLink = null, timer = null;
+
+function setStatus(text, cls) { $("status").textContent = text; $("status").className = cls || ""; }
+
+function render(d) {
+  if (d.status === "authenticating") {
+    setStatus(d.hint || "Väntar på BankID...");
+    if (d.autostart_link && d.autostart_link !== lastLink) {
+      lastLink = d.autostart_link;
+      const a = document.createElement("a");
+      a.className = "open"; a.href = d.autostart_link; a.textContent = "Öppna BankID-appen";
+      $("prompt").replaceChildren(a);
+    }
+    if (d.qr_code && d.qr_code !== lastQr) {
+      lastQr = d.qr_code;
+      $("qr").replaceChildren();
+      new QRCode($("qr"), { text: d.qr_code, width: 200, height: 200 });
+    }
+    return false;
+  }
+  $("prompt").replaceChildren(); $("qr").replaceChildren(); lastQr = lastLink = null;
+  if (d.status === "working") { setStatus("Inloggad — hämtar kvitton..."); return false; }
+  if (d.status === "done") { setStatus(`Klart — ${d.newly_fetched} nya kvitton.`, "ok"); return true; }
+  if (d.status === "error") { setStatus("Fel: " + d.message, "error"); $("retry").hidden = false; return true; }
+  setStatus("Startar..."); return false;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/api/sync/status/${encodeURIComponent(profile)}/${encodeURIComponent(source)}`, { cache: "no-store" });
+    if (render(await r.json())) { clearInterval(timer); timer = null; }
+  } catch { setStatus("Tappade kontakten med servern...", "error"); }
+}
+
+async function start() {
+  $("retry").hidden = true;
+  setStatus("Startar...");
+  // Pågår redan en inloggning (t.ex. startad av Claude via MCP) följer vi den
+  // i stället för att starta en ny — annars blir den första ogiltig.
+  try {
+    const cur = await (await fetch(`/api/sync/status/${encodeURIComponent(profile)}/${encodeURIComponent(source)}`, { cache: "no-store" })).json();
+    if (cur.status !== "authenticating" && cur.status !== "working") {
+      const res = await fetch("/api/sync/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile, source }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      render(await res.json());
+    }
+  } catch (e) { setStatus("Kunde inte starta: " + e.message, "error"); $("retry").hidden = false; return; }
+  if (!timer) timer = setInterval(poll, 1000);
+  poll();
+}
+
+$("retry").addEventListener("click", start);
+start();
+</script>
+</body>
+</html>
