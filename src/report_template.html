@@ -369,8 +369,13 @@ const syncPollers = new Map();
 
 // Ritar om QR:n i qrBox. BankIDs QR roterar varje sekund — kör detta på
 // varje "pending"-poll som har en (ny) qr_code, inte bara första gången.
-function renderQr(qrBox, qrText) {
-  qrBox.innerHTML = '<p>Skanna med BankID (t.ex. från en annan enhet)</p>';
+// Visar både en tryckbar länk (samma enhet — telefonen) och QR:n (annan
+// enhet). Appen måste öppnas från ett riktigt tryck: mobila webbläsare
+// blockerar app-länkar som triggas från en timer.
+function renderQr(qrBox, qrText, link) {
+  qrBox.innerHTML = link
+    ? `<p><a class="autostart-link" href="${link}">↳ Öppna BankID-appen</a></p><p>…eller skanna från en annan enhet:</p>`
+    : '<p>Skanna med BankID (t.ex. från en annan enhet)</p>';
   const target = document.createElement("div");
   qrBox.appendChild(target);
   new QRCode(target, { text: qrText, width: 160, height: 160 });
@@ -391,7 +396,7 @@ function handleSyncStatus(data, statusEl, btn, qrBox) {
   if (data.status === "authenticating") {
     statusEl.textContent = data.hint || "Väntar på BankID...";
     if (data.qr_code) {
-      renderQr(qrBox, data.qr_code);
+      renderQr(qrBox, data.qr_code, data.autostart_link);
     } else if (data.autostart_link) {
       renderAutostart(qrBox, data.autostart_link);
     }
@@ -431,19 +436,10 @@ async function startSync(profile, source, btn, statusEl, qrBox) {
     handleSyncStatus(data, statusEl, btn, qrBox);
 
     if (syncPollers.has(key)) clearInterval(syncPollers.get(key));
-    let autoStarted = false;
     const poll = setInterval(async () => {
       const r = await fetch(`/api/sync/status/${encodeURIComponent(profile)}/${encodeURIComponent(source)}`, { cache: "no-store" });
       const d = await r.json();
       handleSyncStatus(d, statusEl, btn, qrBox);
-
-      // Öppna BankID-appen automatiskt första gången länken dyker upp —
-      // funkar bara om enheten som klickade har appen installerad. Bara
-      // en gång: annars kapar vi navigeringen varje pollning.
-      if (!autoStarted && d.status === "authenticating" && d.autostart_link) {
-        autoStarted = true;
-        window.location.href = d.autostart_link;
-      }
 
       if (d.status === "done") {
         clearInterval(poll);
